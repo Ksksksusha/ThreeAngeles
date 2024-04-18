@@ -17,6 +17,16 @@ class point_t
 
     bool is_valid() const { return (std::isfinite(x_) && std::isfinite(y_) && std::isfinite(z_)); }
 
+    bool operator== (const point_t &pnt) const
+    {
+        ASSERT(is_valid());
+        ASSERT(pnt.is_valid());
+
+        return (is_equal(x_, pnt.x_) && is_equal(y_, pnt.y_) && is_equal(z_, pnt.z_));
+    }
+
+    bool operator!= (const point_t &pnt) const { return !(*this == pnt); }
+
     void print() const { std::cout << "(" << x_ << ", " << y_ << ", " << z_ << ")" << std::endl; }
 
     double get_x() const { return x_; }
