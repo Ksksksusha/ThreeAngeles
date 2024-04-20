@@ -20,6 +20,7 @@ public:
     bool operator== (const point_t &pnt) const {
         if (!is_valid() || !pnt.is_valid())
             throw point_non_valid_eq();
+
         return (is_equal(x_, pnt.x_) && is_equal(y_, pnt.y_) && is_equal(z_, pnt.z_));
     }
 
@@ -31,5 +32,8 @@ public:
     double get_y() const { return y_; }
     double get_z() const { return z_; }
 };
+
+const point_t NAN_PNT  = {NAN, NAN, NAN};
+const point_t NULL_PNT = {0, 0, 0};
 
 } // <-- geometry
