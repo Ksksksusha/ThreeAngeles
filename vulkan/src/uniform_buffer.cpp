@@ -1,160 +1,67 @@
 #include "uniform_buffer.hpp"
- 
-#include <cassert>
-#include <cstring>
-#include <iostream>
- 
+#include "camera.hpp"
+#include "window.hpp"
+
 namespace Vulkan 
 {
 
 //-------------------------------------------------------------------------------//
- 
-VkDeviceSize UniformBuffer::getAlignment(VkDeviceSize instanceSize, VkDeviceSize minOffsetAlignment) 
-{
-    if (minOffsetAlignment > 0) 
-        return (instanceSize + minOffsetAlignment - 1) & ~(minOffsetAlignment - 1);
 
-    return instanceSize;
+UniformBuffer::UniformBuffer(Device& device, SwapChain& swapChain, Camera& camera, Window& window) : device_(device), swapChain_(swapChain), camera_(camera), window_(window) 
+{
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    uniformBuffers_.resize(swapChain.MAX_FRAMES_IN_FLIGHT);
+    
+    uniformBuffersMemory_.resize(swapChain.MAX_FRAMES_IN_FLIGHT);
+    
+    uniformBuffersMapped_.resize(swapChain.MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < swapChain.MAX_FRAMES_IN_FLIGHT; i++) 
+    {
+        device.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers_[i], uniformBuffersMemory_[i]);
+
+        vkMapMemory(device_.getDevice(), uniformBuffersMemory_[i], 0, bufferSize, 0, &uniformBuffersMapped_[i]);
+    }
 }
 
 //-------------------------------------------------------------------------------//
- 
-UniformBuffer::UniformBuffer(
-    Device &device,
-    VkDeviceSize instanceSize,
-    uint32_t instanceCount,
-    VkBufferUsageFlags usageFlags,
-    VkMemoryPropertyFlags memoryPropertyFlags,
-    VkDeviceSize minOffsetAlignment)
-    : device_{device},
-    instanceSize_{instanceSize},
-    instanceCount_{instanceCount},
-    usageFlags_{usageFlags},
-    memoryPropertyFlags_{memoryPropertyFlags} 
-{
-    alignmentSize_ = getAlignment(instanceSize, minOffsetAlignment);
-    
-    bufferSize_ = alignmentSize_ * instanceCount;
-    
-    device_.createBuffer(bufferSize_, usageFlags, memoryPropertyFlags, buffer_, memory_);
-}
 
-//-------------------------------------------------------------------------------//
- 
 UniformBuffer::~UniformBuffer() 
 {
-    unmap();
-    
-    vkDestroyBuffer(device_.device(), buffer_, nullptr);
-    
-    vkFreeMemory(device_.device(), memory_, nullptr);
-}
- 
-//-------------------------------------------------------------------------------//
-
-VkResult UniformBuffer::map(VkDeviceSize size, VkDeviceSize offset)
-{
-    assert(buffer_ && memory_ && "Called map on buffer before create");
-
-    std::cout << mapped_ << std::endl;
-    
-    return vkMapMemory(device_.device(), memory_, offset, size, 0, &mapped_);
-}
-
-//-------------------------------------------------------------------------------//
- 
-void UniformBuffer::unmap() 
-{
-    if (mapped_) 
+    for (size_t i = 0; i < swapChain_.MAX_FRAMES_IN_FLIGHT; i++) 
     {
-        vkUnmapMemory(device_.device(), memory_);
-    
-        mapped_ = nullptr;
+        vkDestroyBuffer(device_.getDevice(), uniformBuffers_[i], nullptr);
+
+        vkFreeMemory(device_.getDevice(), uniformBuffersMemory_[i], nullptr);
     }
 }
 
 //-------------------------------------------------------------------------------//
- 
-void UniformBuffer::writeToBuffer(void *data, VkDeviceSize size, VkDeviceSize offset) 
+
+void UniformBuffer::update(GLFWwindow* const window, const uint32_t currentImage, const float frame_time) 
 {
-    assert(mapped && "Cannot copy to unmapped buffer");
+    camera_.determineMove(window, frame_time);
     
-    if (size == VK_WHOLE_SIZE) 
-        memcpy(mapped_, data, bufferSize_);
+    camera_.determineRotate(window, frame_time);
+
+    camera_.updateViewMatrix();
+
+    UniformBuffer::UniformBufferObject ubo{};
     
-    else 
-    {
-        char *memOffset = (char *)mapped_;
+    ubo.model = glm::mat4(1.0f);
     
-        memOffset += offset;
+    ubo.view = camera_.getVeiwMatrix();
     
-        memcpy(memOffset, data, size);
-    }
-}
- 
-//-------------------------------------------------------------------------------//
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChain_.getExtent().width / (float) swapChain_.getExtent().height, 0.1f, 10000.0f);
+    
+    ubo.viewPos = camera_.getPosition();
+    
+    ubo.proj[1][1] *= -1;
 
-VkResult UniformBuffer::flush(VkDeviceSize size, VkDeviceSize offset) 
-{
-    VkMappedMemoryRange mappedRange = {};
-    mappedRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-    mappedRange.memory = memory_;
-    mappedRange.offset = offset;
-    mappedRange.size = size;
-    return vkFlushMappedMemoryRanges(device_.device(), 1, &mappedRange);
+    memcpy(uniformBuffersMapped_[currentImage], &ubo, sizeof(ubo));
 }
 
 //-------------------------------------------------------------------------------//
 
-VkResult UniformBuffer::invalidate(VkDeviceSize size, VkDeviceSize offset) 
-{
-    VkMappedMemoryRange mappedRange = {};
-    mappedRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-    mappedRange.memory = memory_;
-    mappedRange.offset = offset;
-    mappedRange.size = size;
-    return vkInvalidateMappedMemoryRanges(device_.device(), 1, &mappedRange);
-}
-
-//-------------------------------------------------------------------------------//
-
-VkDescriptorBufferInfo UniformBuffer::descriptorInfo(VkDeviceSize size, VkDeviceSize offset) 
-{
-    return VkDescriptorBufferInfo{
-        buffer_,
-        offset,
-        size,
-    };
-}
- 
-//-------------------------------------------------------------------------------//
-
-void UniformBuffer::writeToIndex(void *data, int index) 
-{
-    writeToBuffer(data, instanceSize_, index * alignmentSize_);
-}
- 
-//-------------------------------------------------------------------------------//
-
-VkResult UniformBuffer::flushIndex(int index) 
-{
-    return flush(alignmentSize_, index * alignmentSize_); 
-}
- 
-//-------------------------------------------------------------------------------//
-
-VkDescriptorBufferInfo UniformBuffer::descriptorInfoForIndex(int index) 
-{
-    return descriptorInfo(alignmentSize_, index * alignmentSize_);
-}
- 
-//-------------------------------------------------------------------------------//
-
-VkResult UniformBuffer::invalidateIndex(int index) 
-{
-    return invalidate(alignmentSize_, index * alignmentSize_);
-}
-
-//-------------------------------------------------------------------------------//
- 
-}  // end of Vulkan namespace 
+} // end of Vulkan namespace

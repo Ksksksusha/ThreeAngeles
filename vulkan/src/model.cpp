@@ -1,169 +1,143 @@
 #include "model.hpp"
+#include "device.hpp"
+#include <array>
 
-#include <cassert>
-#include <cstring>
-
-namespace Vulkan
+namespace Vulkan 
 {
 
 //-------------------------------------------------------------------------------//
 
-Model::Model(Device &device, const Model::Builder& builder) : device_{device}
+Model::Model(Device& device, std::vector<Model::Vertex> vertices, std::vector<uint32_t> indices) 
+    : device_(device) 
 {
-    CreateVertexBuffers(builder.vertices);
+    vertices_ = std::move(vertices);
+    
+    indices_  = std::move(indices);
 
-    CreateIndexBuffers(builder.indices);
+    createVertexBuffer();
+    
+    createIndexBuffer();
 }
 
 //-------------------------------------------------------------------------------//
 
-void Model::CreateVertexBuffers(const std::vector<Vertex>& vertices)
+Model::~Model() 
 {
-    vertexCount_ = static_cast<uint32_t>(vertices.size());
+    vkDestroyBuffer(device_.getDevice(), indexBuffer_, nullptr);
 
-    assert(vertexCount_ >= 3 && "Vertex count must be at least 3");
+    vkFreeMemory(device_.getDevice(), indexBufferMemory_, nullptr);
 
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertexCount_;
+    vkDestroyBuffer(device_.getDevice(), vertexBuffer_, nullptr);
 
-    uint32_t vertexSize = sizeof(vertices[0]);
-
-    UniformBuffer stagingBuffer {
-        device_, 
-        vertexSize, 
-        vertexCount_, 
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    };
-
-    stagingBuffer.map();
-
-    stagingBuffer.writeToBuffer((void *)vertices.data());
-
-    vertexBuffer_ = std::make_unique<UniformBuffer>(
-        device_,
-        vertexSize,
-        vertexCount_,
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    device_.copyBuffer(stagingBuffer.getBuffer(), vertexBuffer_->getBuffer(), bufferSize);
+    vkFreeMemory(device_.getDevice(), vertexBufferMemory_, nullptr);
 }
 
 //-------------------------------------------------------------------------------//
 
-void Model::CreateIndexBuffers(const std::vector<uint32_t>& indices)
+void Model::createVertexBuffer()
 {
-    indexCount_ = static_cast<uint32_t>(indices.size());
+    VkDeviceSize bufferSize = sizeof(vertices_[0]) * vertices_.size();
+
+    VkBuffer stagingBuffer;
     
-    hasIndexBuffer = indexCount_ > 0;
+    VkDeviceMemory stagingBufferMemory;
 
-    if (!hasIndexBuffer)
-        return;
+    device_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indexCount_;
+    void* data = nullptr;
+
+    vkMapMemory(device_.getDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
+
+    memcpy(data, vertices_.data(), (size_t) bufferSize);
     
-    uint32_t indexSize = sizeof(indices[0]);
+    vkUnmapMemory(device_.getDevice(), stagingBufferMemory);
+    
+    device_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer_, vertexBufferMemory_);
 
-    UniformBuffer stagingBuffer{
-        device_,
-        indexSize,
-        indexCount_,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    };
+    device_.copyBuffer(stagingBuffer, vertexBuffer_, bufferSize);
 
-    stagingBuffer.map();
-    stagingBuffer.writeToBuffer((void *)indices.data());
+    vkDestroyBuffer(device_.getDevice(), stagingBuffer, nullptr);
 
-    indexBuffer_ = std::make_unique<UniformBuffer>(
-        device_,
-        indexSize,
-        indexCount_,
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    device_.copyBuffer(stagingBuffer.getBuffer(), indexBuffer_->getBuffer(), bufferSize);
+    vkFreeMemory(device_.getDevice(), stagingBufferMemory, nullptr);
 }
 
 //-------------------------------------------------------------------------------//
 
-void Model::Bind(VkCommandBuffer commandBuffer)
+void Model::createIndexBuffer() 
 {
-    VkBuffer buffers[] = {vertexBuffer_->getBuffer()};
+    VkDeviceSize bufferSize = sizeof(indices_[0]) * indices_.size();
 
-    VkDeviceSize offsets[] = {0};
-
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
-
-    if (hasIndexBuffer)
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer_->getBuffer(), 0, VK_INDEX_TYPE_UINT32);
-}
-
-//-------------------------------------------------------------------------------//
+    VkBuffer stagingBuffer;
     
-void Model::Draw(VkCommandBuffer commandBuffer)
-{
-    if (hasIndexBuffer)
-        vkCmdDrawIndexed(commandBuffer, indexCount_, 1, 0, 0, 0);
+    VkDeviceMemory stagingBufferMemory;
+    
+    device_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
-    else
-        vkCmdDraw(commandBuffer, vertexCount_, 1, 0, 0);
-}
+    void* data = nullptr;
 
-//-------------------------------------------------------------------------------//
+    vkMapMemory(device_.getDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
 
-std::vector<VkVertexInputBindingDescription> Model::Vertex::GetBindingDescriptions() 
-{
-    std::vector<VkVertexInputBindingDescription> bindingDescriptions(1);
+    memcpy(data, indices_.data(), (size_t) bufferSize);
+
+    vkUnmapMemory(device_.getDevice(), stagingBufferMemory);
     
-    bindingDescriptions[0].binding = 0;
-    
-    bindingDescriptions[0].stride = sizeof(Vertex);
-    
-    bindingDescriptions[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-    
-    return bindingDescriptions;
+    device_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer_, indexBufferMemory_);
+
+    device_.copyBuffer(stagingBuffer, indexBuffer_, bufferSize);
+
+    vkDestroyBuffer(device_.getDevice(), stagingBuffer, nullptr);
+
+    vkFreeMemory(device_.getDevice(), stagingBufferMemory, nullptr);
 }
 
 //-------------------------------------------------------------------------------//
 
-std::vector<VkVertexInputAttributeDescription> Model::Vertex::GetAttributeDescriptions() 
+VkVertexInputBindingDescription Model::Vertex::getBindingDescription() 
 {
-    std::vector<VkVertexInputAttributeDescription> attributeDescriptions(3);
+    VkVertexInputBindingDescription bindingDescription{};
     
+    bindingDescription.binding = 0;
     
-    attributeDescriptions[0].binding    = 0;
+    bindingDescription.stride = sizeof(Vertex);
     
-    attributeDescriptions[0].location   = 0;
-    
-    attributeDescriptions[0].format     = VK_FORMAT_R32G32B32_SFLOAT;
-    
-    attributeDescriptions[0].offset     = offsetof(Vertex, position);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    
-    attributeDescriptions[1].binding    = 0;
-    
-    attributeDescriptions[1].location   = 1;
-    
-    attributeDescriptions[1].format     = VK_FORMAT_R32G32B32_SFLOAT;
-    
-    attributeDescriptions[1].offset     = offsetof(Vertex, color);
+    return bindingDescription;
+}
 
+//-------------------------------------------------------------------------------//
+
+std::array<VkVertexInputAttributeDescription, 3> Model::Vertex::getAttributeDescriptions()
+{
+    std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
     
-    attributeDescriptions[2].binding    = 0;
+    attributeDescriptions[0].binding = 0;
     
-    attributeDescriptions[2].location   = 2;
+    attributeDescriptions[0].location = 0;
     
-    attributeDescriptions[2].format     = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
     
-    attributeDescriptions[2].offset     = offsetof(Vertex, normal);
+    attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+    attributeDescriptions[1].binding = 0;
     
+    attributeDescriptions[1].location = 1;
     
+    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    
+    attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+    attributeDescriptions[2].binding = 0;
+    
+    attributeDescriptions[2].location = 2;
+    
+    attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+    
+    attributeDescriptions[2].offset = offsetof(Vertex, normal);
+
     return attributeDescriptions;
 }
 
 //-------------------------------------------------------------------------------//
 
 } // end of Vulkan namespace
-
-//-------------------------------------------------------------------------------//

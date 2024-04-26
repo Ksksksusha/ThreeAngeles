@@ -1,68 +1,63 @@
 #include "window.hpp"
-
 #include <stdexcept>
 
-namespace Vulkan
+namespace Vulkan 
 {
 
 //-------------------------------------------------------------------------------//
 
-Window::Window(int width, int height, const std::string& name) : 
-    width_{width}, 
-    height_{height}, 
-    window_name_{name}
-{
+Window::Window(uint32_t width, uint32_t height, std::string windowName) 
+    : width_(width), height_(height), windowName_(windowName) 
+{ 
     InitWindow();
 }
 
 //-------------------------------------------------------------------------------//
 
-void Window::InitWindow()
+void Window::InitWindow() 
 {
     glfwInit();
     
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  
+
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    window_ = glfwCreateWindow(width_, height_, window_name_.c_str(), nullptr, nullptr);
-
+    window_ = glfwCreateWindow(width_, height_, windowName_.c_str(), nullptr, nullptr);
+    
     glfwSetWindowUserPointer(window_, this);
-
-    glfwSetFramebufferSizeCallback(window_, FrameBufferResizeCallback);
+    
+    glfwSetFramebufferSizeCallback(window_, FramebufferResizeCallback);
 }
 
 //-------------------------------------------------------------------------------//
 
-void Window::CreateWindowSurface(VkInstance instance, VkSurfaceKHR *surface)
+void Window::FramebufferResizeCallback(GLFWwindow* window, int width, int height) 
+{
+    auto vulkan_window = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
+    
+    vulkan_window->SetFrameBufferRisizedFlag();
+    
+    vulkan_window->width_  = width;
+    
+    vulkan_window->height_ = height;
+}
+
+//-------------------------------------------------------------------------------//
+
+void Window::CreateWindowSurface(VkInstance instance, VkSurfaceKHR * surface) 
 {
     if (glfwCreateWindowSurface(instance, window_, nullptr, surface) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed create window\n");
-    }
+        throw std::runtime_error("failed to create window surface!");
 }
 
 //-------------------------------------------------------------------------------//
 
-void Window::FrameBufferResizeCallback(GLFWwindow* window, int width, int height)
-{
-    auto lve_window = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
-
-    lve_window->frameBufferResized_ = true;
-
-    lve_window->width_              = width;
-
-    lve_window->height_             = height;
-}
-
-//-------------------------------------------------------------------------------//
-
-Window::~Window()
+Window::~Window() 
 {
     glfwDestroyWindow(window_);
-
+    
     glfwTerminate();
-}
+};
 
 //-------------------------------------------------------------------------------//
 
