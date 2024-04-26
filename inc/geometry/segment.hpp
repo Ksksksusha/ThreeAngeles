@@ -48,6 +48,6 @@ public:
 
     const point_t& get_fst() const { return first_; }
     const point_t& get_snd() const { return second_; }
-};
+}; // <-- segment_t
 
-}
+} // <-- geometry

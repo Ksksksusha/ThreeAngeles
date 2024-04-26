@@ -4,8 +4,7 @@
 
 namespace geometry {
 
-class line_t
-{
+class line_t {
     vector_t dir_vec_;
     point_t  line_pnt_;
 
@@ -25,6 +24,6 @@ public:
     bool is_valid() const { return dir_vec_.is_valid() && line_pnt_.is_valid(); }
 
     void print() const;
-};
+}; // <-- line_t
 
-}
+} // <-- geometry

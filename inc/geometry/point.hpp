@@ -31,7 +31,7 @@ public:
     double get_x() const { return x_; }
     double get_y() const { return y_; }
     double get_z() const { return z_; }
-};
+}; // <-- point_t
 
 const point_t NAN_PNT  = {NAN, NAN, NAN};
 const point_t SPEC_PNT = {NAN, 0, 0};

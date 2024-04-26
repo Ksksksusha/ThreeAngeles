@@ -38,6 +38,6 @@ public:
     double get_d() const { return d_; }
 
     vector_t get_norm() const { return norm_vec_; }
-};
+}; // <-- plane_t
 
-}
+} // <-- geometry

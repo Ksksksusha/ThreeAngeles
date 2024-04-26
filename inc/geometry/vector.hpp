@@ -32,7 +32,7 @@ public:
     double get_x() const { return x_; }
     double get_y() const { return y_; }
     double get_z() const { return z_; }
-};
+}; // <-- vector_t
 
 const vector_t NULL_VEC{0, 0, 0};
 const vector_t NAN_VEC{NAN, NAN, NAN};
