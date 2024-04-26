@@ -1,73 +1,75 @@
-#ifndef APP_HPP_
-#define APP_HPP_
+#pragma once
 
-#include "device.hpp"
-#include "object.hpp"
+#include "model.hpp"
 #include "window.hpp"
-#include "render.hpp"
-#include "render_system.hpp"
-#include "keyboard.hpp"
-#include "camera.hpp"
-#include "uniform_buffer.hpp"
+#include "device.hpp"
+#include "swap_chain.hpp"
+#include "pipeline.hpp"
 #include "descriptor.hpp"
-#include "point.hpp"
+#include "uniform_buffer.hpp"
+#include "render.hpp"
+#include "camera.hpp"
 #include "triangle.hpp"
 
-#include <memory>
+
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <vector>
 
-namespace Vulkan 
+namespace Vulkan
 {
 
 //-------------------------------------------------------------------------------//
 
-glm::vec3 GetGlmVector(const Point& point);
+glm::vec3 GetGlmVector(const geometry::point_t& point);
 
 //-------------------------------------------------------------------------------//
 
-glm::vec3 GetNormal(const Triangle& triangle);
+glm::vec3 GetNormal(const geometry::triangle_t& triangle);
 
 //-------------------------------------------------------------------------------//
+
+const uint32_t Width  = 800;
+
+const uint32_t Height = 600;
 
 class App 
 {
     public:
-    
-        static const int WIDTH  = 800;
-
-        static const int HEIGHT = 600;
-
-        App(const Model::Builder& builder, const std::pair<Point, float> lightParametres);
         
-        ~App();
+        void run();
 
-        App(const App &) = delete;
-        
-        App &operator=(const App &) = delete;
-
-        void RunApplication();
+        App(std::vector<Model::Vertex> vertices, std::vector<uint32_t> indices) : model(device, vertices, indices) {}
 
     private:
-    
-        void LoadObjects(const Model::Builder& builder);
-
-        std::pair<Point, float> lightParametres_;
         
-        std::unique_ptr<Model> CreateTriangleModel(Device &device, glm::vec3 offset, const Model::Builder& builder);
+        Camera camera{};
         
-        Window                          window_{WIDTH, HEIGHT, "Triangles"};
+        Window window{Width, Height, "vulkan" };
         
-        Device                          device_{window_};
-
-        Render                          render_{window_, device_};
-
-        std::unique_ptr<DescriptorPool> globalPool_{};
+        Device device{window };
         
-        std::vector<Object>             objects_;
+        SwapChain swapChain{window, device };
+        
+        DescriptorSetLayout descriptorSetLayout{device };
+        
+        Pipeline pipeline{device, swapChain, descriptorSetLayout, "vert.spv", "frag.spv"};
+        
+        Model model;
+        
+        UniformBuffer uniformBuffer{device, swapChain, camera, window };
+        
+        DescriptorPool descriptorPool{device, swapChain };
+        
+        DescriptorSets descriptorSets{device, swapChain, uniformBuffer, descriptorSetLayout, descriptorPool };
+        
+        Render render{device, swapChain, pipeline, model, descriptorSets };
+        
+        void drawFrame(const float frame_time);
 };
 
 //-------------------------------------------------------------------------------//
 
-}  // end of Vulkan namespace 
-
-#endif
+} // end of Vulkan namespace

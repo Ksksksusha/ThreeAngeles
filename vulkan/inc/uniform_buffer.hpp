@@ -2,97 +2,68 @@
 #define UNIFORM_BUFFER_HPP_
 
 #include "device.hpp"
- 
+#include "swap_chain.hpp"
+#include "camera.hpp"
+#include "window.hpp"
+
+#include <glm/glm.hpp>
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/gtc/matrix_transform.hpp>
+#include <vector>
+
 namespace Vulkan 
 {
 
 //-------------------------------------------------------------------------------//
- 
+
 class UniformBuffer 
 {
     public:
-        
-        UniformBuffer(
-            Device& device,
-            VkDeviceSize instanceSize,
-            uint32_t instanceCount,
-            VkBufferUsageFlags usageFlags,
-            VkMemoryPropertyFlags memoryPropertyFlags,
-            VkDeviceSize minOffsetAlignment = 1);
+
+        struct UniformBufferObject {
+                glm::mat4 model;
+                glm::mat4 view;
+                glm::mat4 proj;
+                glm::vec3 viewPos;
+            };
+
+        UniformBuffer(Device& device, SwapChain& swapChain, Camera& camera, Window& window);
         
         ~UniformBuffer();
-    
-        UniformBuffer(const UniformBuffer&) = delete;
+
+        UniformBuffer(const UniformBuffer&)             = delete;
         
-        UniformBuffer& operator=(const UniformBuffer&) = delete;
+        UniformBuffer& operator=(const UniformBuffer&)  = delete;
+
+        const std::vector<VkBuffer>& getUniformBuffers()    const { return uniformBuffers_; }
         
+        auto getSizeOfUniformBufferObject()                 const { return sizeof(UniformBufferObject); }
         
-        VkResult map(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-        
-        void unmap();
-    
-        
-        void writeToBuffer(void* data, VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-        
-        VkResult flush(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-        
-        VkDescriptorBufferInfo descriptorInfo(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-        
-        VkResult invalidate(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-    
-        
-        void writeToIndex(void* data, int index);
-        
-        VkResult flushIndex(int index);
-        
-        VkDescriptorBufferInfo descriptorInfoForIndex(int index);
-        
-        VkResult invalidateIndex(int index);
-    
-        
-        VkBuffer                getBuffer()               const { return buffer_; }
-        
-        void*                   getMappedMemory()         const { return mapped_; }
-        
-        uint32_t                getInstanceCount()        const { return instanceCount_; }
-        
-        VkDeviceSize            getInstanceSize()         const { return instanceSize_; }
-        
-        VkDeviceSize            getAlignmentSize()        const { return instanceSize_; }
-        
-        VkBufferUsageFlags      getUsageFlags()           const { return usageFlags_; }
-        
-        VkMemoryPropertyFlags   getMemoryPropertyFlags()  const { return memoryPropertyFlags_; }
-        
-        VkDeviceSize            getBufferSize()           const { return bufferSize_; }
- 
+        const std::vector<void*>& getUniformBeffersMapped() const { return uniformBuffersMapped_; }
+
+        void update(GLFWwindow* const window, const uint32_t currentImage, const float frame_time);
+
     private:
         
-        static VkDeviceSize getAlignment(VkDeviceSize instanceSize, VkDeviceSize minOffsetAlignment);
+        Device&                         device_;
         
-        Device& device_;
+        SwapChain&                      swapChain_;
         
-        void* mapped_ = nullptr;
+        Camera&                         camera_;
         
-        VkBuffer buffer_ = VK_NULL_HANDLE;
+        Window&                         window_;
+
+        std::vector<VkBuffer>           uniformBuffers_;
         
-        VkDeviceMemory memory_ = VK_NULL_HANDLE;
+        std::vector<VkDeviceMemory>     uniformBuffersMemory_;
         
-        VkDeviceSize bufferSize_;
-        
-        uint32_t instanceCount_;
-        
-        VkDeviceSize instanceSize_;
-        
-        VkDeviceSize alignmentSize_;
-        
-        VkBufferUsageFlags usageFlags_;
-        
-        VkMemoryPropertyFlags memoryPropertyFlags_;
+        std::vector<void*>              uniformBuffersMapped_;
+    
 };
 
 //-------------------------------------------------------------------------------//
- 
-}  // end of Vulkan namespace
+
+} // end of Vulkan namespace
 
 #endif

@@ -1,95 +1,17 @@
 #include "app.hpp"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp>
-
-#include <array>
-#include <stdexcept>
-#include <cassert>
 #include <chrono>
 
-namespace Vulkan 
+namespace Vulkan
 {
-
-struct Ubo {
-    alignas(16) glm::mat4 projectionView{1.f};
-    alignas(16) glm::mat4 model;
-    // glm::vec4 ambientLight{1.f, 1.f, 1.f, .2f};
-    alignas(16) glm::vec3 lightPosition{0.f};
-    // alignas(16) glm::vec4 lightColor{1.f};
-    // int size = 0;
-};
-
-struct NewUbo {
-    alignas(16) glm::mat4 model;
-    alignas(16) glm::mat4 view;
-    alignas(16) glm::mat4 proj;
-    alignas(16) glm::vec3 view_pos;
-};
 
 //-------------------------------------------------------------------------------//
 
-App::App(const Model::Builder& builder, const std::pair<Point, float> lightParametres)
-    : lightParametres_{lightParametres}
+void App::run() 
 {
-    globalPool_ = DescriptorPool::Builder(device_)
-        .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
-        .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
-        .build();
-
-    LoadObjects(builder);
-}
-
-//-------------------------------------------------------------------------------//
-
-App::~App() {}
-
-//-------------------------------------------------------------------------------//
-
-void App::RunApplication() 
-{
-    std::vector<std::unique_ptr<UniformBuffer>> uboBuffers(SwapChain::MAX_FRAMES_IN_FLIGHT);
-    
-    for (int i = 0; i < uboBuffers.size(); i++) 
-    {
-        uboBuffers[i] = std::make_unique<UniformBuffer>(
-            device_,
-            sizeof(Ubo),
-            1,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-        
-        uboBuffers[i]->map();
-    }
-
-    auto globalSetLayout = DescriptorSetLayout::Builder(device_)
-        .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT)
-        .build();
-    
-    std::vector<VkDescriptorSet> globalDescriptorSets(SwapChain::MAX_FRAMES_IN_FLIGHT);
-  
-    for (int i = 0; i < globalDescriptorSets.size(); i++) 
-    {
-        auto bufferInfo = uboBuffers[i]->descriptorInfo();
-        
-        DescriptorWriter(*globalSetLayout, *globalPool_)
-            .writeBuffer(0, &bufferInfo)
-            .build(globalDescriptorSets[i]);
-    }
-
-    RenderSystem render_system{device_, render_.GetSwapChainRenderPass(), globalSetLayout->getDescriptorSetLayout()};
-    
-    Camera camera{};
-
-    auto viewer_object = Object::CreateObject();
-
     auto current_time = std::chrono::high_resolution_clock::now();
 
-    Keyboard camera_controller{};
-
-    while (!window_.ShouldClose()) 
+    while (!window.ShouldClose()) 
     {
         glfwPollEvents();
 
@@ -97,92 +19,116 @@ void App::RunApplication()
 
         float frame_time = std::chrono::duration<float, std::chrono::seconds::period>(new_time - current_time).count();
 
-        std::cout << frame_time << std::endl;
-
         current_time = new_time;
-
-        camera_controller.MoveInPlainXZ(window_.GetWindow(), frame_time, viewer_object, camera);
-
-        camera.SetViewYXZ(viewer_object.transform.translation, viewer_object.transform.rotation);
-
-        float aspect = render_.GetAspectRatio();
-
-        camera.SetOrthographProjection(-aspect, aspect, -1, 1, -1, 1);
-
-        camera.SetPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 10000.f);
         
-        if (auto command_buffer = render_.BeginFrame())
-        {
-            int frameIndex = render_.GetFrameIndex();
-            
-            FrameInfo frameInfo {frameIndex, frame_time, command_buffer, camera, globalDescriptorSets[frameIndex]};
-            
-            Ubo ubo{};
-            ubo.lightPosition = camera.GetPosition();
-            // std::cout << ubo.lightPosition.x << " " << ubo.lightPosition.y << " " << ubo.lightPosition.z << std::endl;
-            ubo.model += glm::mat4{1.f};
-            ubo.projectionView = camera.GetProjectionMatrix() * camera.GetView();
-            uboBuffers[frameIndex]->writeToBuffer(&ubo);
-            uboBuffers[frameIndex]->flush();
-
-            render_.BeginSwapChainRenderPass(command_buffer);
-            render_system.RenderObjects(objects_, frameInfo);
-            render_.EndSwapChainRenderPass(command_buffer);
-            render_.EndFrame();
-        }
+        drawFrame(frame_time);
     }
 
-    vkDeviceWaitIdle(device_.device());
+    vkDeviceWaitIdle(device.getDevice());
 }
 
 //-------------------------------------------------------------------------------//
 
-std::unique_ptr<Model> App::CreateTriangleModel(Device &device, glm::vec3 offset, const Model::Builder& builder)
+void App::drawFrame(const float frame_time) 
 {
-    return std::make_unique<Model>(device, builder);
+    if (vkWaitForFences(device.getDevice(),1, &swapChain.getInFlightFences()[render.currentFrame_], VK_TRUE, UINT64_MAX) != VK_SUCCESS)
+        throw std::runtime_error("failed to wait for Fences!");
+
+    uint32_t imageIndex = 0;
+    
+    VkResult result = vkAcquireNextImageKHR(device.getDevice(), swapChain.getSwapChain(), UINT64_MAX, swapChain.getImageAvailableSemaphores()[render.currentFrame_], nullptr, &imageIndex);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) 
+    {
+        swapChain.recreate();
+        return;
+    } 
+    
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) 
+        throw std::runtime_error("failed to acquire swap chain image!");
+
+    uniformBuffer.update(window.GetGLFWwindow(), render.currentFrame_, frame_time);
+    
+    if (vkResetFences(device.getDevice(), 1, &swapChain.getInFlightFences()[render.currentFrame_]) != VK_SUCCESS)
+        throw std::runtime_error("failed to reset Fences!");
+
+    render.record(render.getCommandBuffers()[render.currentFrame_], imageIndex);
+
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType        = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore waitSemaphores[]        = {swapChain.getImageAvailableSemaphores()[render.currentFrame_]};
+    VkPipelineStageFlags waitStages[]   = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount       = 1;
+    submitInfo.pWaitSemaphores          = waitSemaphores;
+    submitInfo.pWaitDstStageMask        = waitStages;
+
+    submitInfo.commandBufferCount   = 1;
+    submitInfo.pCommandBuffers      = &render.getCommandBuffers()[render.currentFrame_];
+
+    VkSemaphore signalSemaphores[]  = {swapChain.getRenderFinishedSemaphores()[render.currentFrame_]};
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores    = signalSemaphores;
+
+    vkResetFences(device.getDevice(), 1, &swapChain.getInFlightFences()[render.currentFrame_]);
+
+    if (vkQueueSubmit(device.getGraphicsQueue(), 1, &submitInfo, swapChain.getInFlightFences()[render.currentFrame_]) != VK_SUCCESS)
+        throw std::runtime_error("failed to submit draw command buffer!");
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+
+    VkSwapchainKHR swapChains[] = {swapChain.getSwapChain()};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+
+    presentInfo.pImageIndices = &imageIndex;
+
+    result = vkQueuePresentKHR(device.getPresentQueue(), &presentInfo);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window.WasFrameBufferResized()) 
+    {
+        window.ResetFrameBufferRisizedFlag();
+        swapChain.recreate();
+    } 
+    
+    else if (result != VK_SUCCESS) 
+        throw std::runtime_error("failed to present swap chain image!");
+
+    render.currentFrame_ = (render.currentFrame_ + 1) % swapChain.MAX_FRAMES_IN_FLIGHT;
 }
 
 //-------------------------------------------------------------------------------//
 
-void App::LoadObjects(const Model::Builder& builder) 
-{
-    std::unique_ptr<Model> model = CreateTriangleModel(device_, {0.f, 0.f, 0.f}, builder);
-
-    auto triangle = Object::CreateObject();
-
-    triangle.model = std::move(model);
-
-    objects_.push_back(std::move(triangle));
-}
-
-//-------------------------------------------------------------------------------//
-
-glm::vec3 GetNormal(const Triangle& triangle)
+glm::vec3 GetNormal(const geometry::triangle_t& triangle)
 {
     glm::vec3 side1{}, side2{};
 
-    side1.x = triangle.P2().X() - triangle.P1().X();
-    side1.y = triangle.P2().Y() - triangle.P1().Y();
-    side1.z = triangle.P2().Z() - triangle.P1().Z();
+    side1.x = triangle.getB().get_x() - triangle.getA().get_x();
+    side1.y = triangle.getB().get_y() - triangle.getA().get_y();
+    side1.z = triangle.getB().get_z() - triangle.getA().get_z();
 
-    side2.x = triangle.P3().X() - triangle.P1().X();
-    side2.y = triangle.P3().X() - triangle.P1().X();
-    side2.z = triangle.P3().X() - triangle.P1().X();
+    side2.x = triangle.getC().get_x() - triangle.getA().get_x();
+    side2.y = triangle.getC().get_y() - triangle.getA().get_y();
+    side2.z = triangle.getC().get_z() - triangle.getA().get_z();
 
     return glm::normalize(glm::cross(side1, side2));
 }
 
 //-------------------------------------------------------------------------------//
 
-glm::vec3 GetGlmVector(const Point& point)
+glm::vec3 GetGlmVector(const geometry::point_t& point)
 {
     glm::vec3 vec{};
 
-    vec.x = point.X();
+    vec.x = point.get_x();
 
-    vec.y = point.Y();
+    vec.y = point.get_y();
 
-    vec.z = point.Z();
+    vec.z = point.get_z();
 
     return vec;
 }

@@ -2,68 +2,65 @@
 #define MODEL_HPP_
 
 #include "device.hpp"
-#include "uniform_buffer.hpp"
-
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
-#include <vector>
 
 namespace Vulkan 
 {
-
+    
 //-------------------------------------------------------------------------------//
 
 class Model 
 {
-    public:    
-    
+    public:
+
         struct Vertex {
-            glm::vec3 position;
+            glm::vec3 pos;
             glm::vec3 color;
             glm::vec3 normal;
 
-            static std::vector<VkVertexInputBindingDescription> GetBindingDescriptions();
-            static std::vector<VkVertexInputAttributeDescription> GetAttributeDescriptions();
+            static VkVertexInputBindingDescription                  getBindingDescription();
+            static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions();
         };
-
-        struct Builder {
-            std::vector<Vertex> vertices{};
-            std::vector<uint32_t> indices{};
-        };
-
-        Model(Device &device, const Model::Builder& builder);
+    
+        Model(Device& device, std::vector<Model::Vertex> vertices, std::vector<uint32_t> indices);
         
-        ~Model() {};
+        ~Model();
 
-        Model(const Model &) = delete;
+        Model(const Model&) = delete;
         
-        Model &operator=(const Model &) = delete;
+        Model& operator=(const Model&) = delete;
 
-        void Bind(VkCommandBuffer commandBuffer);
+        std::vector<Vertex> vertices_;
         
-        void Draw(VkCommandBuffer commandBuffer);
+        std::vector<uint32_t> indices_;
 
+        const VkBuffer& getVertexBuffer() const { return vertexBuffer_; }
+        
+        const VkBuffer& getIndexBuffer()  const { return indexBuffer_;  }
+    
     private:
         
-        void CreateVertexBuffers(const std::vector<Vertex> &vertices);
-
-        void CreateIndexBuffers(const std::vector<uint32_t> &indices);
-
-        Device          &device_;
+        VkBuffer        vertexBuffer_;
         
-        std::unique_ptr<UniformBuffer> vertexBuffer_;
-        uint32_t        vertexCount_;
+        VkDeviceMemory  vertexBufferMemory_;
+        
+        VkBuffer        indexBuffer_;
+        
+        VkDeviceMemory  indexBufferMemory_;
+        
+        Device&         device_;
 
-        bool hasIndexBuffer = false;
-
-        std::unique_ptr<UniformBuffer> indexBuffer_;
-        uint32_t        indexCount_;
+        void createVertexBuffer();
+        
+        void createIndexBuffer();
 };
 
 //-------------------------------------------------------------------------------//
 
-}  // end of Vulkan namespace 
+} // end of Vulkan namespace
 
 #endif
